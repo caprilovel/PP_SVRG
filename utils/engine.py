@@ -5,16 +5,32 @@ import torch
 import pandas as pds
 import numpy as np
 import wandb
+import logging
 
 from .utils import calculate_full_gradient, calculate_loss, update_weights, log_metrics, update_dataset
 from .log import AverageCalculator, log_to_file
 from .metric import accuracy
 
 
+
+
 def train_one_epoch(model, optimizer, train_loader, train_loader_large, start_weights,
                     metric, loss_fn, model_snapshot=None, optimizer_snapshot=None,
-                    temperature=0.5, optimize='SGD', device='cpu', update_weight=True):
-
+                    temperature=0.5, optimize='SGD', device='cpu', update_weight=True, ):
+    
+    
+    logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    if not update_weight:
+        train_dataloader_copy =  update_dataset(3, train_loader, model, device, alpha=temperature)
+        # train_dataloader_copy = train_loader   
+    else:
+        train_dataloader_copy = train_loader    
+    
     if optimize == 'SVRG':
         g = calculate_full_gradient(model_snapshot, train_loader, start_weights, loss_fn, 
                                     optimizer_snapshot, device)
@@ -31,8 +47,9 @@ def train_one_epoch(model, optimizer, train_loader, train_loader_large, start_we
     
     weights = start_weights
     print("total iterations:", len(train_loader))
-
-    for i, (images, labels) in enumerate(train_loader):
+    logging.info("total iterations: %d", len(train_loader))
+    for i, (images, labels) in enumerate(train_dataloader_copy):
+        logging.info("Iteration: %d", i)
         if i % 10 == 0:
             print("Iteration: ", i)
             print("Weights: ", weights)
@@ -42,6 +59,8 @@ def train_one_epoch(model, optimizer, train_loader, train_loader_large, start_we
         # if loss_iter.mean() > 100:
         #     print(yhat)   
             # print(weights)
+        # if not update_weight:
+        #     loss_iter += 1e-3 * sum(torch.norm(p, 2)**2 for p in model.parameters() if p.requires_grad and p.ndim > 1)
         optimizer.zero_grad()
         loss_iter.backward()    
         
@@ -52,16 +71,13 @@ def train_one_epoch(model, optimizer, train_loader, train_loader_large, start_we
             optimizer.step(optimizer_snapshot.get_param_groups())
         else:
             optimizer.step()  
-        # Update weights
-        # label_weights = torch.tensor([weights[label] for label in weights.keys()], dtype=torch.float32).to(device)
+        
         if update_weight:
             with torch.no_grad():
                 weights = update_weights(model, train_loader_large, loss_fn, 
                                  temperature, device)
-        # weights = update_weights(model, train_loader_large, loss_fn, 
-                                #  temperature, device)
-        else:
-            update_dataset(3, train_loader, model, device, alpha=temperature)
+        
+        
         # Log metrics
         acc = accuracy(yhat.cpu(), labels)
         log_metrics(loss_iter, acc, metric, i)
@@ -136,7 +152,7 @@ def train_credit_model(model, model_snapshot, optimizer, optimizer_snapshot, tra
                 train_loader_large, loss_fn, log_dir, n_epochs, optimize,
                 print_interval, temperature, device, log, use_wandb):
     
-    update_dataset(3, train_loader, model, device, alpha=temperature)
+    # update_dataset(3, train_loader, model, device, alpha=temperature)
     
     metrics = {
         'loss': AverageCalculator(),

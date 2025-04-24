@@ -8,14 +8,15 @@ from torch.utils.data import DataLoader
 from optim import initialize_optimizer
 from dataset import load_dataset
 from models import initialize_model
-from utils import get_device, get_args, get_loss_fn, train_model, setup_output_directory, log_to_file
+from utils import get_device, get_args, get_loss_fn, train_model, setup_output_directory, log_to_file, fix_seed
 import hydra
 import wandb
 
-
+from utils.utils import get_sub_dataloader
 
 
 if __name__ == "__main__":
+    fix_seed(2025)
     args = get_args()
     if args.wandb:
         # Initialize wandb
@@ -33,6 +34,9 @@ if __name__ == "__main__":
 
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     train_loader_large = DataLoader(train_set, batch_size=len(train_set), shuffle=True)
+    # train_loader = get_sub_dataloader(train_loader, 1, device)
+    train_loader_large = get_sub_dataloader(train_loader_large, 1, device='cpu', use_full=True)
+    
     loss_fn = get_loss_fn(args.loss_type)
     
 

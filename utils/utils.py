@@ -6,9 +6,13 @@ from torchvision import transforms, datasets
 import numpy as np
 from torch.utils.data import Subset
 import matplotlib.pyplot as plt
+import copy
+from torch.utils.data import DataLoader, TensorDataset
+from collections import defaultdict
+import logging
 
 def groupwise_weights(
-    model_k, train_loader_large, loss_fn, beta=1, device='cpu'
+    model_k, train_loader_large, loss_fn, beta=1, device='cpu', s_ratio=1
     # model_k, train_loader_large, loss_fn, beta=0.5, device='cpu'
     ):
     """
@@ -20,8 +24,24 @@ def groupwise_weights(
     model_k.eval()
     group_loss = {}
     group_weights = {}
-
+    
+    # logging.basicConfig(
+    # format='%(asctime)s - %(levelname)s - %(message)s',
+    # level=logging.INFO,
+    # datefmt='%Y-%m-%d %H:%M:%S'
+    # )
+    # logging.info("start generate sub dataset")
+    
+    # sub_dataloader = get_sub_dataloader(train_loader_large, s_ratio, device)
+    
+    # logging.info("start generate group loss")
+    print("dataloader size: ", len(train_loader_large), len(train_loader_large.dataset))
+    # print("sub_dataloader size: ", len(sub_dataloader), len(sub_dataloader.dataset))
+    
     for images, labels in train_loader_large:
+    #     pass
+    # logging.info("median group loss")
+    # for images, labels in sub_dataloader:
         images = images.to(device)
         yhat = model_k(images)
         labels = labels.to(device)
@@ -40,7 +60,7 @@ def groupwise_weights(
             
     for label in group_loss:
         group_loss[label] /= group_weights[label]        
-    
+    # logging.info("end generate group loss ")
     # print("Group losses: ", group_loss)
     max_loss = max(group_loss.values())
     # calculate softmax of -beta * loss
@@ -58,6 +78,36 @@ def groupwise_weights(
     
     return group_weights
 
+def get_sub_dataloader(dataloader, ratio, device, use_full=False):
+    all_data_by_class = defaultdict(list)
+    batch_size = dataloader.batch_size
+    
+    for images, labels in dataloader:
+        for img, label in zip(images, labels):
+            all_data_by_class[label.item()].append(img)
+
+    min_class_size = min(len(v) for v in all_data_by_class.values())
+    num_per_class = max(1, int(min_class_size * ratio))
+
+    sampled_images = []
+    sampled_labels = []
+
+    for label, images in all_data_by_class.items():
+        indices = torch.randperm(len(images))[:num_per_class]
+        sampled_images.extend([images[i] for i in indices])
+        sampled_labels.extend([label] * num_per_class)
+
+    sampled_images = torch.stack(sampled_images).to(device)
+    sampled_labels = torch.tensor(sampled_labels).to(device)
+    print('nums of labels:', len(sampled_labels))
+
+    sampled_dataset = TensorDataset(sampled_images, sampled_labels)
+    if use_full:
+        sub_loader = DataLoader(sampled_dataset, batch_size=len(sampled_dataset), shuffle=False)
+    else:
+        sub_loader = DataLoader(sampled_dataset, batch_size=batch_size, shuffle=True)
+    return sub_loader
+
 def calculate_loss(model, images, labels, weights, loss_fn, device):
     images = images.to(device)
     labels = labels.to(device)
@@ -70,8 +120,8 @@ def calculate_loss(model, images, labels, weights, loss_fn, device):
     # loss_iter = loss_fn()(yhat, labels)
     return loss_iter, yhat
 
-def update_weights(model, train_loader_large, loss_fn, beta, device):
-    return groupwise_weights(model, train_loader_large, loss_fn, beta=beta, device=device)
+def update_weights(model, train_loader_large, loss_fn, beta, device, s_ratio=1):
+    return groupwise_weights(model, train_loader_large, loss_fn, beta=beta, device=device, s_ratio=s_ratio)
 
 def log_metrics(loss_iter, acc, metric, iter):
     metric['loss'].update(loss_iter.data.item())
@@ -120,12 +170,13 @@ def calculate_full_gradient(model, train_loader, start_weights, loss_fn, optimiz
 
 
         
-def update_dataset(columns, dataloader, model, device, alpha=0.1):
+def _update_dataset(columns, dataloader, model, device, alpha=0.1):
     model.eval()
 
-    dataset = dataloader.dataset  # Subset 对象
-    full_dataset = dataset.dataset  # 原始 Dataset
-    indices = dataset.indices      # Subset 的索引列表
+
+    dataset = dataloader_copy.dataset  
+    full_dataset = dataset.dataset  
+    indices = dataset.indices      
 
     # 假设 full_dataset.data 和 full_dataset.labels 是 Tensor
     all_data = full_dataset.data[indices].to(device)
@@ -150,4 +201,39 @@ def update_dataset(columns, dataloader, model, device, alpha=0.1):
         # 回写更新后的数据到 full_dataset 中
         full_dataset.data[indices[i * batch_size : (i + 1) * batch_size]] = i_data_updated.detach().cpu()
 
+
+def update_dataset(columns, dataloader, model, device, alpha=0.1):
+    model.eval()
+
+    dataloader_copy = copy.deepcopy(dataloader)
+    dataset = dataloader_copy.dataset  
+    full_dataset = dataset.dataset  
+    indices = dataset.indices      
+
+    # 假设 full_dataset.data 和 full_dataset.labels 是 Tensor
+    all_data = full_dataset.data[indices].to(device)
+    all_labels = full_dataset.labels[indices].to(device)
+
+    batch_size = dataloader.batch_size
+    for i, idx in enumerate(range(0, len(indices), batch_size)):
+        end_idx = min(idx + batch_size, len(indices))
+        i_data = all_data[i * batch_size : (i + 1) * batch_size]
+        labels = all_labels[i * batch_size : (i + 1) * batch_size]
+
+        i_data = i_data.clone().detach().requires_grad_(True)
+
+        outputs = model(i_data)
+        loss = F.cross_entropy(outputs, labels)
+        loss.backward()
+
+        grads = i_data.grad
+        # normalize the gradients in the sample level
+        # grads = grads / (grads.norm(dim=1, keepdim=True) + 1e-8)
+        
+        i_data_updated = i_data.clone().detach()
+        i_data_updated[:, :columns] += alpha * grads[:, :columns]
+
+        
+        full_dataset.data[indices[i * batch_size : (i + 1) * batch_size]] = i_data_updated.detach().cpu()
+    return dataloader_copy
      

@@ -14,6 +14,10 @@ def MNIST_dataset():
     transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.5,), (0.5,))])
     test_set = datasets.MNIST('data/MNIST', download=True, train=False, transform=transform)
     train_set = datasets.MNIST("data/MNIST", download=True, train=True, transform=transform)
+    
+    
+    
+    
     return train_set, test_set
 
 
@@ -158,7 +162,7 @@ def processing_credit_dataset(data_path):
 
     
 class CreditDataset(Dataset):
-    def __init__(self, num_samples=10000, data_type='train'):
+    def __init__(self, num_samples=5000, data_type='train'):
         super().__init__()
         
         path = 'data/givemesomecredit/'
