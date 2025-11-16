@@ -7,4 +7,7 @@ wandb/
 *.log
 *.bash
 *.png
+*.pdf
+*.ipynb_checkpoints
 *.code-workspace
+.*

@@ -4,13 +4,15 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser(description="Train SVRG/SGD on MNIST data.")
     # only sgd and svrg are supported
+    parser.add_argument('--seed', type=int, default=2025,
+                        help="random seed.")
     parser.add_argument('--optimizer', type=str, default="SGD", choices=["SGD", "SVRG"],
                         help="optimizer.")
     parser.add_argument('--nn_model', type=str, default="MNIST_one_layer",
                         help="neural network model.")
     parser.add_argument('--dataset', type=str, default="MNIST",
                         help="neural network model.")
-    parser.add_argument('--n_epoch', type=int, default=1000,
+    parser.add_argument('--n_epoch', type=int, default=300,
                         help="number of training iterations.")
     parser.add_argument('--lr', type=float, default=0.001,
                         help="learning rate.")

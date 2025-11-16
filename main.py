@@ -16,8 +16,9 @@ from utils.utils import get_sub_dataloader
 
 
 if __name__ == "__main__":
-    fix_seed(2025)
+    
     args = get_args()
+    fix_seed(args.seed)
     if args.wandb:
         # Initialize wandb
         import wandb
@@ -37,6 +38,9 @@ if __name__ == "__main__":
     # train_loader = get_sub_dataloader(train_loader, 1, device)
     train_loader_large = get_sub_dataloader(train_loader_large, 1, device='cpu', use_full=True)
     
+    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False)
+    val_loader = get_sub_dataloader(val_loader, 1, device=device, use_full=True)
+    
     loss_fn = get_loss_fn(args.loss_type)
     
 
@@ -51,7 +55,7 @@ if __name__ == "__main__":
         return train_model(*args, **kwargs)
     
     decorated_train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_loader, 
-                train_loader_large, loss_fn, log_dir, n_epochs=args.n_epoch, optimize=args.optimizer,
+                train_loader_large, val_loader, loss_fn, log_dir, n_epochs=args.n_epoch, optimize=args.optimizer,
                 temperature = args.temperature, print_interval=args.print_every, device=device,
                 log=args.log, use_wandb=args.wandb, update_weight=args.dataset != 'credit'
             )

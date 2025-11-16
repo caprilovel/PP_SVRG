@@ -90,7 +90,7 @@ def train_one_epoch(model, optimizer, train_loader, train_loader_large, start_we
     return metric['loss'].avg, metric['acc'].avg, metric['grad'].avg, weights
 
 def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_loader, 
-                train_loader_large, loss_fn, log_dir, n_epochs, optimize,
+                train_loader_large, val_loader, loss_fn, log_dir, n_epochs, optimize,
                 print_interval, temperature, device, log, use_wandb, update_weight, *args, **kwargs):
     
     start_weights = update_weights(model, train_loader_large, loss_fn, beta=temperature, device=device)
@@ -123,11 +123,14 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
 
         # for metric in metrics.values():
         #     metric.reset()
+        eval_loss, eval_acc = eval_one_epoch(model, val_loader, loss_fn, device)
 
         new_row = {
             'epoch': epoch,
             'train_loss': train_loss,
             'train_acc': train_acc,
+            'eval_loss': eval_loss,
+            'eval_acc': eval_acc,
             'weights': new_weights,
             'grads': grads
         }
@@ -146,7 +149,18 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
             df.to_csv(os.path.join(log_dir, 'train_stats.csv'))
     if log:
         open(os.path.join(log_dir, 'done'), 'a').close()
-        
+
+def eval_one_epoch(model, val_loader, loss_fn, device):
+    metrics = {
+        'loss': AverageCalculator(),
+        'acc': AverageCalculator(),
+    }
+    with torch.no_grad():
+        for images, labels in val_loader:
+            loss_iter, yhat = calculate_loss(model, images, labels, None, loss_fn, device)
+            acc = accuracy(yhat.cpu(), labels)
+            log_metrics(loss_iter, acc, metrics, None)
+    return metrics['loss'].avg, metrics['acc'].avg
         
 def train_credit_model(model, model_snapshot, optimizer, optimizer_snapshot, train_loader, 
                 train_loader_large, loss_fn, log_dir, n_epochs, optimize,
