@@ -1,23 +1,23 @@
 #!/bin/bash
 
 # 固定参数
-DATASET="CIFAR10"
-MODEL="CIFAR10_convnet"
-LR=0.005
-DEVICE="cuda:5"
+DATASET="credit"
+MODEL="mlp"
+LR=0.003
+DEVICE="cuda:4"
 BATCH=5
 RATIO=0.1
 LOG="--log"
 
-# 搜索空间
-TEMPS=(20 50 80)
+# 搜索空间（按你截图）
+TEMPS=(0.01 0.2 0.4)
 OPTIMS=("SGD" "SVRG")
-SEEDS=(2023 2024 2025)
+SEEDS=(2028 2029 2030 2031 2032 2033)
 
-# 并行数量上限（比如你 GPU 够，可以开到 12）
+# 并行数量上限
 MAX_JOBS=18
 
-# 控制并行任务数量的函数
+# 控制并行任务数量
 function wait_for_free_slot() {
     while (( $(jobs -r | wc -l) >= MAX_JOBS )); do
         sleep 1
@@ -28,7 +28,7 @@ for T in "${TEMPS[@]}"; do
     for OPT in "${OPTIMS[@]}"; do
         for SEED in "${SEEDS[@]}"; do
 
-            wait_for_free_slot  # 控制并行数量
+            wait_for_free_slot
 
             CMD="python main.py \
                 --optimizer $OPT \
@@ -43,11 +43,11 @@ for T in "${TEMPS[@]}"; do
                 --seed $SEED"
 
             echo "Running: $CMD"
-            eval $CMD &   # 并行执行
+            eval $CMD &
 
         done
     done
 done
 
-wait   # 等全部子进程结束
-echo "All experiments finished!"
+wait
+echo "All credit experiments finished!"

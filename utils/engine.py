@@ -123,14 +123,14 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
 
         # for metric in metrics.values():
         #     metric.reset()
-        eval_loss, eval_acc = eval_one_epoch(model, val_loader, loss_fn, device)
+        # eval_loss, eval_acc = eval_one_epoch(model, val_loader, loss_fn, device)
 
         new_row = {
             'epoch': epoch,
             'train_loss': train_loss,
             'train_acc': train_acc,
-            'eval_loss': eval_loss,
-            'eval_acc': eval_acc,
+            # 'eval_loss': eval_loss,
+            # 'eval_acc': eval_acc,
             'weights': new_weights,
             'grads': grads
         }
