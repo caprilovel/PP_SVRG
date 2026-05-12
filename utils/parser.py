@@ -16,7 +16,7 @@ def get_args():
                         help="number of training iterations.")
     parser.add_argument('--lr', type=float, default=0.001,
                         help="learning rate.")
-    parser.add_argument('--batch_size', type=int, default=64,
+    parser.add_argument('--batch_size', type=int, default=16,
                         help="batch size.")
     parser.add_argument('--weight_decay', type=float, default=0.0,
                         help="regularization strength.")
@@ -49,6 +49,8 @@ def get_args():
     #TODO: add more arguments
     parser.add_argument('--min_lr', type=float, default=0.0001,
                         help="minimum learning rate.")
+    parser.add_argument('--n_samples', type=int, default=None,
+                        help="number of samples to use for gradient perturbation in update_dataset. If None, use all samples.")
     
     
     return parser.parse_args()

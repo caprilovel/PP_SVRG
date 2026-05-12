@@ -216,7 +216,11 @@ def setup_output_directory(args):
         if not os.path.isdir(log_dir):
             os.mkdir(log_dir)
         with open(os.path.join(log_dir, "args.json"), "w") as f:
-            json.dump(vars(args), f)
+            try:
+                from omegaconf import OmegaConf
+                json.dump(OmegaConf.to_container(args, resolve=True), f)
+            except Exception:
+                json.dump(vars(args), f)
     else:
         # log_dir = current directory
         log_dir = os.path.join(os.getcwd(), model_name)

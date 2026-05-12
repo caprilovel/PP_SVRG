@@ -170,55 +170,68 @@ def calculate_full_gradient(model, train_loader, start_weights, loss_fn, optimiz
 
 
         
-def _update_dataset(columns, dataloader, model, device, alpha=0.1):
-    model.eval()
+# def _update_dataset(columns, dataloader, model, device, alpha=0.1):
+#     model.eval()
 
 
-    dataset = dataloader_copy.dataset  
-    full_dataset = dataset.dataset  
-    indices = dataset.indices      
+#     dataset = dataloader_copy.dataset  
+#     full_dataset = dataset.dataset  
+#     indices = dataset.indices      
 
-    # 假设 full_dataset.data 和 full_dataset.labels 是 Tensor
-    all_data = full_dataset.data[indices].to(device)
-    all_labels = full_dataset.labels[indices].to(device)
+#     # assuming full_dataset.data and full_dataset.labels are Tensor
+#     all_data = full_dataset.data[indices].to(device)
+#     all_labels = full_dataset.labels[indices].to(device)
 
-    batch_size = dataloader.batch_size
-    for i, idx in enumerate(range(0, len(indices), batch_size)):
-        end_idx = min(idx + batch_size, len(indices))
-        i_data = all_data[i * batch_size : (i + 1) * batch_size]
-        labels = all_labels[i * batch_size : (i + 1) * batch_size]
+#     batch_size = dataloader.batch_size
+#     for i, idx in enumerate(range(0, len(indices), batch_size)):
+#         end_idx = min(idx + batch_size, len(indices))
+#         i_data = all_data[i * batch_size : (i + 1) * batch_size]
+#         labels = all_labels[i * batch_size : (i + 1) * batch_size]
 
-        i_data = i_data.clone().detach().requires_grad_(True)
+#         i_data = i_data.clone().detach().requires_grad_(True)
 
-        outputs = model(i_data)
-        loss = F.cross_entropy(outputs, labels)
-        loss.backward()
+#         outputs = model(i_data)
+#         loss = F.cross_entropy(outputs, labels)
+#         loss.backward()
 
-        grads = i_data.grad
-        i_data_updated = i_data.clone().detach()
-        i_data_updated[:, :columns] += alpha * grads[:, :columns]
+#         grads = i_data.grad
+#         i_data_updated = i_data.clone().detach()
+#         i_data_updated[:, :columns] += alpha * grads[:, :columns]
 
-        # 回写更新后的数据到 full_dataset 中
-        full_dataset.data[indices[i * batch_size : (i + 1) * batch_size]] = i_data_updated.detach().cpu()
+#         # restore the updated data back to the original dataset
+#         full_dataset.data[indices[i * batch_size : (i + 1) * batch_size]] = i_data_updated.detach().cpu()
 
 
-def update_dataset(columns, dataloader, model, device, alpha=0.1):
+def update_dataset(columns, dataloader, model, device, alpha=0.1, n_samples=None):
+    from torch.utils.data import Subset, TensorDataset
     model.eval()
 
     dataloader_copy = copy.deepcopy(dataloader)
-    dataset = dataloader_copy.dataset  
-    full_dataset = dataset.dataset  
-    indices = dataset.indices      
+    dataset = dataloader_copy.dataset
 
-    # 假设 full_dataset.data 和 full_dataset.labels 是 Tensor
-    all_data = full_dataset.data[indices].to(device)
-    all_labels = full_dataset.labels[indices].to(device)
+    if isinstance(dataset, Subset):
+        full_dataset = dataset.dataset
+        indices = dataset.indices
+        all_data = full_dataset.data[indices].to(device)
+        all_labels = full_dataset.labels[indices].to(device)
+    elif isinstance(dataset, TensorDataset):
+        full_dataset = dataset
+        indices = list(range(len(dataset)))
+        all_data = dataset.tensors[0].to(device)
+        all_labels = dataset.tensors[1].to(device)
+    else:
+        raise TypeError(f"Unsupported dataset type: {type(dataset)}")
+
+    if n_samples is not None and n_samples < len(indices):
+        selected = torch.randperm(len(indices))[:n_samples].tolist()
+    else:
+        selected = list(range(len(indices)))
 
     batch_size = dataloader.batch_size
-    for i, idx in enumerate(range(0, len(indices), batch_size)):
-        end_idx = min(idx + batch_size, len(indices))
-        i_data = all_data[i * batch_size : (i + 1) * batch_size]
-        labels = all_labels[i * batch_size : (i + 1) * batch_size]
+    for i, idx in enumerate(range(0, len(selected), batch_size)):
+        batch_selected = selected[idx : idx + batch_size]
+        i_data = all_data[batch_selected]
+        labels = all_labels[batch_selected]
 
         i_data = i_data.clone().detach().requires_grad_(True)
 
@@ -229,11 +242,14 @@ def update_dataset(columns, dataloader, model, device, alpha=0.1):
         grads = i_data.grad
         # normalize the gradients in the sample level
         # grads = grads / (grads.norm(dim=1, keepdim=True) + 1e-8)
-        
+
         i_data_updated = i_data.clone().detach()
         i_data_updated[:, :columns] += alpha * grads[:, :columns]
 
-        
-        full_dataset.data[indices[i * batch_size : (i + 1) * batch_size]] = i_data_updated.detach().cpu()
+        if isinstance(dataset, Subset):
+            orig_indices = [indices[j] for j in batch_selected]
+            full_dataset.data[orig_indices] = i_data_updated.detach().cpu()
+        else:
+            full_dataset.tensors[0][batch_selected] = i_data_updated.detach()
     return dataloader_copy
      

@@ -1,0 +1,31 @@
+defaults:
+  - _self_
+
+hydra:
+  output_subdir: null
+  job:
+    chdir: false
+  run:
+    dir: .
+
+seed: 2025
+optimizer: SGD
+nn_model: MNIST_one_layer
+dataset: MNIST
+n_epoch: 300
+lr: 0.001
+batch_size: 16
+weight_decay: 0.0
+exp_name: ""
+print_every: 1
+ratio: 1.0
+temperature: 0.5
+loss_type: cross_entropy
+output_dir: /research/nfs_khalili_17/ding/code/PP_SVRG/outputs
+device: cpu
+log: false
+wandb: false
+wandb_project: svrg_sgd_cifar
+wandb_entity: null
+min_lr: 0.0001
+n_samples: null

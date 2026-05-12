@@ -33,7 +33,7 @@ python main.py --optimizer SGD --dataset CIFAR10 --nn_model CIFAR10_convnet --lr
 
 WANDB_AGENT_DISABLE_FLAPPING=true wandb agent --count 20 your_entity_name/svrg_sgd_cifar/abc123456 --python sweep.py
 ```
-python main.py --optimizer SVRG --dataset MNIST --nn_model one_layer --lr 0.003 --device 0 --log --temperature 50 --ratio 0.05 --batch_size 100
+python main.py --optimizer SVRG --dataset MNIST --nn_model one_layer --lr 0.003 --device 0 --log --temperature 50 --ratio 1 --batch_size 100
 
 ## Creidt dataset 
 If you want to run with the credit dataset, please use the following command

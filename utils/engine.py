@@ -16,7 +16,7 @@ from .metric import accuracy
 
 def train_one_epoch(model, optimizer, train_loader, train_loader_large, start_weights,
                     metric, loss_fn, model_snapshot=None, optimizer_snapshot=None,
-                    temperature=0.5, optimize='SGD', device='cpu', update_weight=True, ):
+                    temperature=0.5, optimize='SGD', device='cpu', update_weight=True, n_samples=None):
     
     
     logging.basicConfig(
@@ -26,7 +26,7 @@ def train_one_epoch(model, optimizer, train_loader, train_loader_large, start_we
     )
     
     if not update_weight:
-        train_dataloader_copy =  update_dataset(3, train_loader, model, device, alpha=temperature)
+        train_dataloader_copy =  update_dataset(3, train_loader, model, device, alpha=temperature, n_samples=n_samples)
         # train_dataloader_copy = train_loader   
     else:
         train_dataloader_copy = train_loader    
@@ -89,9 +89,9 @@ def train_one_epoch(model, optimizer, train_loader, train_loader_large, start_we
         
     return metric['loss'].avg, metric['acc'].avg, metric['grad'].avg, weights
 
-def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_loader, 
+def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_loader,
                 train_loader_large, val_loader, loss_fn, log_dir, n_epochs, optimize,
-                print_interval, temperature, device, log, use_wandb, update_weight, *args, **kwargs):
+                print_interval, temperature, device, log, use_wandb, update_weight, n_samples=None, *args, **kwargs):
     
     start_weights = update_weights(model, train_loader_large, loss_fn, beta=temperature, device=device)
     metrics = {
@@ -100,7 +100,7 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
         'grad': AverageCalculator(),
     }
 
-    columns = ['epoch', 'train_loss', 'train_acc', 'weights', 'grads']
+    columns = ['epoch', 'train_loss', 'train_acc', 'eval_loss', 'eval_acc', 'weights', 'grads']
     df = pds.DataFrame(columns=columns)
 
     for epoch in range(n_epochs):
@@ -108,29 +108,29 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
 
 
         train_loss, train_acc, grads, new_weights = train_one_epoch(
-                model, optimizer, train_loader, train_loader_large, start_weights, metrics, 
-                loss_fn, model_snapshot, optimizer_snapshot, temperature, 
-                optimize=optimize, device=device
+                model, optimizer, train_loader, train_loader_large, start_weights, metrics,
+                loss_fn, model_snapshot, optimizer_snapshot, temperature,
+                optimize=optimize, device=device, n_samples=n_samples
             )
+        eval_loss, eval_acc = eval_one_epoch(model, val_loader, loss_fn, device, temperature)
+
         if use_wandb:
             wandb.log({
                 'epoch': epoch,
                 'train_loss': train_loss,
                 'train_acc': train_acc,
+                'eval_loss': eval_loss,
+                'eval_acc': eval_acc,
                 'grads': grads,
                 'weights': new_weights
             })
-
-        # for metric in metrics.values():
-        #     metric.reset()
-        # eval_loss, eval_acc = eval_one_epoch(model, val_loader, loss_fn, device)
 
         new_row = {
             'epoch': epoch,
             'train_loss': train_loss,
             'train_acc': train_acc,
-            # 'eval_loss': eval_loss,
-            # 'eval_acc': eval_acc,
+            'eval_loss': eval_loss,
+            'eval_acc': eval_acc,
             'weights': new_weights,
             'grads': grads
         }
@@ -150,45 +150,50 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
     if log:
         open(os.path.join(log_dir, 'done'), 'a').close()
 
-def eval_one_epoch(model, val_loader, loss_fn, device):
+def eval_one_epoch(model, val_loader, loss_fn, device, temperature=0.5, n_samples=None):
+    val_loader_copy = update_dataset(3, val_loader, model, device, alpha=temperature, n_samples=n_samples)
     metrics = {
         'loss': AverageCalculator(),
         'acc': AverageCalculator(),
     }
     with torch.no_grad():
-        for images, labels in val_loader:
+        for images, labels in val_loader_copy:
             loss_iter, yhat = calculate_loss(model, images, labels, None, loss_fn, device)
-            acc = accuracy(yhat.cpu(), labels)
+            acc = accuracy(yhat.cpu(), labels.cpu())
             log_metrics(loss_iter, acc, metrics, None)
     return metrics['loss'].avg, metrics['acc'].avg
         
-def train_credit_model(model, model_snapshot, optimizer, optimizer_snapshot, train_loader, 
-                train_loader_large, loss_fn, log_dir, n_epochs, optimize,
-                print_interval, temperature, device, log, use_wandb):
-    
+def train_credit_model(model, model_snapshot, optimizer, optimizer_snapshot, train_loader,
+                train_loader_large, val_loader, loss_fn, log_dir, n_epochs, optimize,
+                print_interval, temperature, device, log, use_wandb, n_samples=None):
+
     # update_dataset(3, train_loader, model, device, alpha=temperature)
-    
+
     metrics = {
         'loss': AverageCalculator(),
         'acc': AverageCalculator(),
         'grad': AverageCalculator(),
     }
 
-    columns = ['epoch', 'train_loss', 'train_acc', 'weights', 'grads']
+    columns = ['epoch', 'train_loss', 'train_acc', 'eval_loss', 'eval_acc', 'weights', 'grads']
     df = pds.DataFrame(columns=columns)
 
     for epoch in range(n_epochs):
         t0 = time.time()
         train_loss, train_acc, grads, new_weights = train_one_epoch(
-                model, optimizer, train_loader, train_loader_large, None, metrics, 
-                loss_fn, model_snapshot, optimizer_snapshot, temperature, 
-                optimize=optimize, device=device, update_weight=False
+                model, optimizer, train_loader, train_loader_large, None, metrics,
+                loss_fn, model_snapshot, optimizer_snapshot, temperature,
+                optimize=optimize, device=device, update_weight=False, n_samples=n_samples
             )
+        eval_loss, eval_acc = eval_one_epoch(model, val_loader, loss_fn, device, temperature, n_samples=n_samples)
+
         if use_wandb:
             wandb.log({
                 'epoch': epoch,
                 'train_loss': train_loss,
                 'train_acc': train_acc,
+                'eval_loss': eval_loss,
+                'eval_acc': eval_acc,
                 'grads': grads,
                 'weights': new_weights
             })
@@ -200,6 +205,8 @@ def train_credit_model(model, model_snapshot, optimizer, optimizer_snapshot, tra
             'epoch': epoch,
             'train_loss': train_loss,
             'train_acc': train_acc,
+            'eval_loss': eval_loss,
+            'eval_acc': eval_acc,
             'weights': new_weights,
             'grads': grads
         }
@@ -208,7 +215,7 @@ def train_credit_model(model, model_snapshot, optimizer, optimizer_snapshot, tra
         print(df)
 
         if epoch % print_interval == 0:
-            print(f"Epoch {epoch} / {n_epochs}, train loss: {train_loss}, train acc: {train_acc}, grads: {grads}, new weights: {new_weights}, time: {time.time() - t0}")
+            print(f"Epoch {epoch} / {n_epochs}, train loss: {train_loss}, train acc: {train_acc}, eval_loss: {eval_loss}, eval_acc: {eval_acc}, grads: {grads}, new weights: {new_weights}, time: {time.time() - t0}")
             
             
 
