@@ -11,3 +11,4 @@ wandb/
 *.ipynb_checkpoints
 *.code-workspace
 .*
+!q*/**/*.pdf 
