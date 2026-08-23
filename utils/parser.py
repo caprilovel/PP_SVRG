@@ -51,6 +51,10 @@ def get_args():
                         help="minimum learning rate.")
     parser.add_argument('--n_samples', type=int, default=None,
                         help="number of samples to use for gradient perturbation in update_dataset. If None, use all samples.")
-    
+    parser.add_argument('--warmup_epochs', type=int, default=0,
+                        help="number of SGD warmup epochs to run before starting SVRG (SVRG optimizer only).")
+    parser.add_argument('--warmup_lr', type=float, default=None,
+                        help="learning rate for the SGD warmup phase. If None, uses the same lr as the main optimizer.")
+
     
     return parser.parse_args()

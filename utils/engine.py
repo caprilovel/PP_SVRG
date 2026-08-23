@@ -91,8 +91,9 @@ def train_one_epoch(model, optimizer, train_loader, train_loader_large, start_we
 
 def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_loader,
                 train_loader_large, val_loader, loss_fn, log_dir, n_epochs, optimize,
-                print_interval, temperature, device, log, use_wandb, update_weight, n_samples=None, *args, **kwargs):
-    
+                print_interval, temperature, device, log, use_wandb, update_weight, n_samples=None,
+                warmup_epochs=0, warmup_lr=None, *args, **kwargs):
+
     start_weights = update_weights(model, train_loader_large, loss_fn, beta=temperature, device=device)
     metrics = {
         'loss': AverageCalculator(),
@@ -100,8 +101,66 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
         'grad': AverageCalculator(),
     }
 
-    columns = ['epoch', 'train_loss', 'train_acc', 'eval_loss', 'eval_acc', 'weights', 'grads']
+    columns = ['epoch', 'phase', 'train_loss', 'train_acc', 'eval_loss', 'eval_acc', 'weights', 'grads']
     df = pds.DataFrame(columns=columns)
+
+    global_epoch = 0
+
+    if optimize == 'SVRG' and warmup_epochs > 0:
+        from optim.sgd import SGD_Simple
+
+        base_group = optimizer.param_groups[0]
+        lr = warmup_lr if warmup_lr is not None else base_group['lr']
+        warmup_optimizer = SGD_Simple(model.parameters(), lr=lr, weight_decay=base_group['weight_decay'])
+
+        print(f"Warming up with SGD for {warmup_epochs} epoch(s) before starting SVRG (warmup_lr={lr})")
+
+        for w_epoch in range(warmup_epochs):
+            t0 = time.time()
+
+            train_loss, train_acc, grads, new_weights = train_one_epoch(
+                    model, warmup_optimizer, train_loader, train_loader_large, start_weights, metrics,
+                    loss_fn, model_snapshot=None, optimizer_snapshot=None, temperature=temperature,
+                    optimize='SGD', device=device, n_samples=n_samples
+                )
+            eval_loss, eval_acc = eval_one_epoch(model, val_loader, loss_fn, device, temperature)
+
+            if use_wandb:
+                wandb.log({
+                    'epoch': global_epoch,
+                    'phase': 'warmup',
+                    'train_loss': train_loss,
+                    'train_acc': train_acc,
+                    'eval_loss': eval_loss,
+                    'eval_acc': eval_acc,
+                    'grads': grads,
+                    'weights': new_weights
+                })
+
+            new_row = {
+                'epoch': global_epoch,
+                'phase': 'warmup',
+                'train_loss': train_loss,
+                'train_acc': train_acc,
+                'eval_loss': eval_loss,
+                'eval_acc': eval_acc,
+                'weights': new_weights,
+                'grads': grads
+            }
+            df = pds.concat([df, pds.DataFrame(new_row, index=[0])], ignore_index=True)
+            print(df)
+
+            if w_epoch % print_interval == 0:
+                print(f"[Warmup] Epoch {w_epoch} / {warmup_epochs}, train loss: {train_loss}, train acc: {train_acc}, grads: {grads}, time: {time.time() - t0}")
+
+            start_weights = new_weights
+            global_epoch += 1
+
+            if log:
+                df.to_csv(os.path.join(log_dir, 'train_stats.csv'))
+
+        # sync the SVRG snapshot model with the warmed-up model before starting SVRG
+        model_snapshot.load_state_dict(model.state_dict())
 
     for epoch in range(n_epochs):
         t0 = time.time()
@@ -116,7 +175,8 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
 
         if use_wandb:
             wandb.log({
-                'epoch': epoch,
+                'epoch': global_epoch,
+                'phase': optimize,
                 'train_loss': train_loss,
                 'train_acc': train_acc,
                 'eval_loss': eval_loss,
@@ -126,7 +186,8 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
             })
 
         new_row = {
-            'epoch': epoch,
+            'epoch': global_epoch,
+            'phase': optimize,
             'train_loss': train_loss,
             'train_acc': train_acc,
             'eval_loss': eval_loss,
@@ -140,15 +201,33 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
 
         if epoch % print_interval == 0:
             print(f"Epoch {epoch} / {n_epochs}, train loss: {train_loss}, train acc: {train_acc}, grads: {grads}, new weights: {new_weights}, time: {time.time() - t0}")
-            
-            
+
+
 
         start_weights = new_weights
+        global_epoch += 1
 
         if (epoch + 1) % 1 == 0 and log:
             df.to_csv(os.path.join(log_dir, 'train_stats.csv'))
     if log:
         open(os.path.join(log_dir, 'done'), 'a').close()
+
+def eval_one_epoch_fixed(model, val_loader, loss_fn, device):
+    """Evaluate on fixed original distribution (no performative shift)."""
+    import copy
+    val_loader_copy = copy.deepcopy(val_loader)
+    metrics = {
+        'loss': AverageCalculator(),
+        'acc': AverageCalculator(),
+    }
+    with torch.no_grad():
+        for images, labels in val_loader_copy:
+            images, labels = images.to(device), labels.to(device)
+            loss_iter, yhat = calculate_loss(model, images, labels, None, loss_fn, device)
+            acc = accuracy(yhat.cpu(), labels.cpu())
+            log_metrics(loss_iter, acc, metrics, None)
+    return metrics['loss'].avg, metrics['acc'].avg
+
 
 def eval_one_epoch(model, val_loader, loss_fn, device, temperature=0.5, n_samples=None):
     val_loader_copy = update_dataset(3, val_loader, model, device, alpha=temperature, n_samples=n_samples)

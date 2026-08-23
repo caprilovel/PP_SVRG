@@ -54,7 +54,7 @@ def main(args: DictConfig):
                 train_loader_large, val_loader, loss_fn, log_dir, n_epochs=args.n_epoch, optimize=args.optimizer,
                 temperature=args.temperature, print_interval=args.print_every, device=device,
                 log=args.log, use_wandb=args.wandb, update_weight=args.dataset != 'credit',
-                n_samples=args.n_samples
+                n_samples=args.n_samples, warmup_epochs=args.warmup_epochs, warmup_lr=args.warmup_lr
             )
 
 

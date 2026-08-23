@@ -12,3 +12,6 @@ wandb/
 *.code-workspace
 .*
 !q*/**/*.pdf 
+results/
+scripts/
+plot/

@@ -29,3 +29,5 @@ wandb_project: svrg_sgd_cifar
 wandb_entity: null
 min_lr: 0.0001
 n_samples: null
+warmup_epochs: 0
+warmup_lr: null

@@ -2,6 +2,7 @@ from .cifar100_models import CIFAR100_ConvNet, get_cifar100_ResNet18
 from .cifar10_models import CIFAR10_ConvNet, get_cifar10_ResNet18
 from .mnist_models import MNIST_one_layer, MNIST_two_layers, MNIST_ConvNet
 from .credit_mlp import get_credit_mlp
+from .spambase_mlp import get_spambase_mlp
 
 model_dict = {
         "mnist_one_layer": MNIST_one_layer,
@@ -11,6 +12,7 @@ model_dict = {
         "cifar10_resnet18": get_cifar10_ResNet18,
         "cifar100_resnet18": get_cifar100_ResNet18,
         "credit_mlp": get_credit_mlp,
+        "spambase_mlp": get_spambase_mlp,
     }
 
 def initialize_model(args, device):

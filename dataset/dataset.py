@@ -221,6 +221,66 @@ def get_credit_dataset(p_sample=1):
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [len(dataset)//2, len(dataset) - len(dataset)//2])
     return train_dataset, val_dataset
 
+
+def processing_spambase_dataset(data_path):
+    data_frame = pd.read_csv(data_path, header=None)
+    data_frame = data_frame.dropna()
+    data = np.array(data_frame)
+    data, labels = data[:, :-1], data[:, -1]
+    return data, labels
+
+
+class SpambaseDataset(Dataset):
+    def __init__(self, num_samples=3600, data_type='train'):
+        super().__init__()
+
+        path = 'data/spambase/'
+        data_path = f'{path}spambase.data'
+
+        data, labels = processing_spambase_dataset(data_path)
+
+        if num_samples > len(labels):
+            raise ValueError("Requested number of samples exceeds available samples in the dataset")
+
+        class0_idx = np.where(labels == 0)[0]
+        class1_idx = np.where(labels == 1)[0]
+
+        half = num_samples // 2
+        print("class0_idx: ", len(class0_idx), "class1_idx: ", len(class1_idx))
+        print("half: ", half)
+
+        if len(class0_idx) < half or len(class1_idx) < half:
+            raise ValueError("Not enough samples in one of the classes to balance the dataset")
+
+        sampled_class0 = np.random.choice(class0_idx, half, replace=False)
+        sampled_class1 = np.random.choice(class1_idx, half, replace=False)
+
+        combined_idx = np.concatenate([sampled_class0, sampled_class1])
+        np.random.shuffle(combined_idx)
+
+        self.data = torch.tensor(data[combined_idx], dtype=torch.float32)
+        self._standardize_data()
+        self.labels = torch.tensor(labels[combined_idx], dtype=torch.int64)
+
+    def _standardize_data(self):
+        mean = self.data.mean(dim=0)
+        std = self.data.std(dim=0)
+        self.data = (self.data - mean) / std
+        self.data = torch.nan_to_num(self.data, nan=0.0, posinf=1.0, neginf=-1.0)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx], self.labels[idx]
+
+
+def get_spambase_dataset(p_sample=1):
+    dataset = SpambaseDataset(num_samples=int(3600*p_sample), data_type='train')
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [len(dataset)//2, len(dataset) - len(dataset)//2])
+    return train_dataset, val_dataset
+
+
 def load_dataset(args):
     if args.dataset == "MNIST":
         if args.ratio < 1:
@@ -233,6 +293,8 @@ def load_dataset(args):
         train_set, val_set = CIFAR100_dataset(p_sample=args.ratio)
     elif args.dataset == "credit":
         train_set, val_set = get_credit_dataset(p_sample=args.ratio)
+    elif args.dataset == "spambase":
+        train_set, val_set = get_spambase_dataset(p_sample=args.ratio)
     else:
         raise ValueError("Unknown dataset")
     return train_set, val_set
