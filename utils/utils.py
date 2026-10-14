@@ -21,62 +21,51 @@ def groupwise_weights(
     also calculate the average gradient norm
     return a dictionary with keys = label, values = weights
     """
+    if beta == 0:
+        # softmax(-beta * loss) is uniform regardless of the per-group losses,
+        # so skip the full-dataset forward pass entirely (this is the hot path
+        # called once per training iteration and dominates runtime at large n).
+        all_labels = set()
+        for _, labels in train_loader_large:
+            all_labels.update(labels.tolist())
+        return {label: 1.0 for label in sorted(all_labels)}
+
     model_k.eval()
-    group_loss = {}
-    group_weights = {}
-    
-    # logging.basicConfig(
-    # format='%(asctime)s - %(levelname)s - %(message)s',
-    # level=logging.INFO,
-    # datefmt='%Y-%m-%d %H:%M:%S'
-    # )
-    # logging.info("start generate sub dataset")
-    
-    # sub_dataloader = get_sub_dataloader(train_loader_large, s_ratio, device)
-    
-    # logging.info("start generate group loss")
+
     print("dataloader size: ", len(train_loader_large), len(train_loader_large.dataset))
-    # print("sub_dataloader size: ", len(sub_dataloader), len(sub_dataloader.dataset))
-    
+
+    # accumulate per-class loss sum / count as GPU tensors (indexed by class id)
+    # -- vectorized, no per-class .item() calls in the hot loop, since each
+    # .item()/.cpu() forces a host<->device sync and this function is called
+    # once per training iteration.
+    loss_sum = None
+    loss_count = None
     for images, labels in train_loader_large:
-    #     pass
-    # logging.info("median group loss")
-    # for images, labels in sub_dataloader:
         images = images.to(device)
-        yhat = model_k(images)
         labels = labels.to(device)
-        # loss for each sample without averaging
-        loss_iter = loss_fn(reduction='none')(yhat, labels)
-        loss_iter = loss_iter.view(-1)  # Ensure loss_iter is a 1D tensor
-        unique_labels = torch.unique(labels)
-        for i in range(len(unique_labels)):
-            label = unique_labels[i].item()
-            if label not in group_loss:
-                group_loss[label] = 0.0
-                group_weights[label] = 0
-            
-            group_loss[label] += loss_iter[labels == label].mean()
-            group_weights[label] += (labels == label).sum().item()
-            
-    for label in group_loss:
-        group_loss[label] /= group_weights[label]        
-    # logging.info("end generate group loss ")
-    # print("Group losses: ", group_loss)
-    max_loss = max(group_loss.values())
-    # calculate softmax of -beta * loss
-    group_weights = {
-        label: np.exp(-beta * (group_loss[label] - max_loss).item()) for label in group_loss
-        }
-    total = sum(group_weights.values())
-    
-    
-    
-    for label in group_weights:
-        group_weights[label] /= total
-        group_weights[label] *= len(group_weights)  # scale to the number of groups
-    # print("Group weights: ", group_weights)
-    
-    return group_weights
+        yhat = model_k(images)
+        loss_iter = loss_fn(reduction='none')(yhat, labels).view(-1)
+
+        if loss_sum is None:
+            num_classes = int(labels.max().item()) + 1
+            loss_sum = torch.zeros(num_classes, device=device)
+            loss_count = torch.zeros(num_classes, device=device)
+
+        loss_sum.scatter_add_(0, labels, loss_iter)
+        loss_count.scatter_add_(0, labels, torch.ones_like(loss_iter))
+
+    present = loss_count > 0
+    group_loss = loss_sum[present] / loss_count[present]
+    labels_present = present.nonzero(as_tuple=True)[0]
+
+    max_loss = group_loss.max()
+    group_weights_t = torch.exp(-beta * (group_loss - max_loss))
+    group_weights_t = group_weights_t / group_weights_t.sum() * group_weights_t.numel()
+
+    # single host<->device sync at the end, for the (num_classes,)-sized result
+    labels_cpu = labels_present.tolist()
+    weights_cpu = group_weights_t.tolist()
+    return dict(zip(labels_cpu, weights_cpu))
 
 def get_sub_dataloader(dataloader, ratio, device, use_full=False):
     all_data_by_class = defaultdict(list)
@@ -111,13 +100,17 @@ def get_sub_dataloader(dataloader, ratio, device, use_full=False):
 def calculate_loss(model, images, labels, weights, loss_fn, device):
     images = images.to(device)
     labels = labels.to(device)
-    if weights is not None:
+    if weights is not None and len(set(weights.values())) > 1:
+        # skip building+transferring a weight tensor when every class already
+        # has the same weight (e.g. temperature=0) -- weight=None is exactly
+        # equivalent and avoids a per-call CPU->GPU sync that otherwise
+        # dominates runtime at small batch sizes (this function is called
+        # once per iteration, plus once per batch in calculate_full_gradient).
         label_weights = torch.tensor([weights[label] for label in weights.keys()], dtype=torch.float32).to(device)
     else:
         label_weights = None
     yhat = model(images)
     loss_iter = loss_fn(weight=label_weights)(yhat, labels)
-    # loss_iter = loss_fn()(yhat, labels)
     return loss_iter, yhat
 
 def update_weights(model, train_loader_large, loss_fn, beta, device, s_ratio=1):

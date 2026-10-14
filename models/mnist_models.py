@@ -1,19 +1,30 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
+
+def _glorot_init(model):
+    """Normalized (Glorot/Xavier) initialization, as used in Reddi et al. 2016."""
+    for m in model.modules():
+        if isinstance(m, nn.Linear):
+            nn.init.xavier_uniform_(m.weight)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+    return model
+
+
 def MNIST_one_layer():
     # Create the nn model
     input_size = 784
-    hidden_sizes = [64]
+    hidden_sizes = [100]
     output_size = 10
 
     # The non-convex function (model) is Sequential function fron torch. Notice that we have implemented an activation function to make it non-convex
-    return nn.Sequential(
+    model = nn.Sequential(
         nn.Flatten(),
         nn.Linear(input_size, hidden_sizes[0]),
         nn.ReLU(),
-        nn.Linear(hidden_sizes[0], output_size),
-        nn.LogSoftmax(dim=1))
+        nn.Linear(hidden_sizes[0], output_size))
+    return _glorot_init(model)
 
 
 def MNIST_two_layers():
@@ -23,14 +34,14 @@ def MNIST_two_layers():
     output_size = 10
 
     # The non-convex function (model) is Sequential function fron torch. Notice that we have implemented an activation function to make it non-convex
-    return nn.Sequential(
+    model = nn.Sequential(
         nn.Flatten(),
         nn.Linear(input_size, hidden_sizes[0]),
         nn.ReLU(),
         nn.Linear(hidden_sizes[0], hidden_sizes[1]),
         nn.ReLU(),
-        nn.Linear(hidden_sizes[1], output_size),
-        nn.LogSoftmax(dim=1))
+        nn.Linear(hidden_sizes[1], output_size))
+    return _glorot_init(model)
 
 
 class MNIST_ConvNet(nn.Module):

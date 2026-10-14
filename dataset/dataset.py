@@ -11,7 +11,8 @@ def MNIST_dataset():
     if not os.path.isdir("data"):
         os.mkdir("data")
     # Download MNIST dataset and set the valset as the test test
-    transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.5,), (0.5,))])
+    # features normalized to [0, 1], as in Reddi et al. 2016
+    transform = transforms.Compose([transforms.ToTensor()])
     test_set = datasets.MNIST('data/MNIST', download=True, train=False, transform=transform)
     train_set = datasets.MNIST("data/MNIST", download=True, train=True, transform=transform)
     
@@ -33,9 +34,9 @@ def MNIST_dataset_sample(p=0.43):
     if not os.path.isdir("data"):
         os.mkdir("data")
     # Define transformation
+    # features normalized to [0, 1], as in Reddi et al. 2016
     transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
+        transforms.ToTensor()
     ])
     
     # Load full datasets
@@ -109,9 +110,9 @@ def CIFAR10_dataset(p_sample=1):
         os.mkdir("data")
 
     # Define transformation
+    # features normalized to [0, 1], as in Reddi et al. 2016
     transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        transforms.ToTensor()
     ])
 
     # Load datasets

@@ -117,6 +117,8 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
 
         for w_epoch in range(warmup_epochs):
             t0 = time.time()
+            for m in metrics.values():
+                m.reset()
 
             train_loss, train_acc, grads, new_weights = train_one_epoch(
                     model, warmup_optimizer, train_loader, train_loader_large, start_weights, metrics,
@@ -164,7 +166,8 @@ def train_model(model, model_snapshot, optimizer, optimizer_snapshot, train_load
 
     for epoch in range(n_epochs):
         t0 = time.time()
-
+        for m in metrics.values():
+            m.reset()
 
         train_loss, train_acc, grads, new_weights = train_one_epoch(
                 model, optimizer, train_loader, train_loader_large, start_weights, metrics,
